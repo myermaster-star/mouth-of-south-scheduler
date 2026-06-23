@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>Mouth of the South LLC</title>
+
+<!-- ===== Install as a home-screen app (iOS + Android) ===== -->
+<link rel="manifest" href="manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Mouth of the South" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<style>
+  :root{
+    --bg:#ffffff;
+    --panel:#f5f5f7;          /* apple light-gray tiles / sections */
+    --panel-2:#ececef;        /* pressed state */
+    --card:#ffffff;
+    --hair:#d2d2d7;           /* apple hairline separator */
+    --hair-soft:rgba(0,0,0,.08);
+    --red:#e11d2a;            /* brand red — used where apple uses blue */
+    --red-deep:#b30f1a;
+    --red-ink:#d70015;        /* readable red for text/links on white */
+    --text:#1d1d1f;          /* apple near-black */
+    --muted:#6e6e73;
+    --muted-2:#86868b;
+    --gold:#9a6a00;
+    --r-sm:12px;--r:18px;--r-lg:22px;
+    --ease:cubic-bezier(.4,0,.2,1);
+    --safe-b:env(safe-area-inset-bottom,0px);
+    --safe-t:env(safe-area-inset-top,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;}                     /* kill double-tap zoom + 300ms delay */
+  html{-webkit-text-size-adjust:100%;height:100%;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;letter-spacing:-0.01em;
+    overscroll-behavior:none;                        /* no rubber-band / pull-to-refresh */
+    -webkit-user-select:none;user-select:none;       /* app-like: nothing selectable… */
+    -webkit-touch-callout:none;}                      /* …and no long-press popup */
+  body{padding-bottom:calc(94px + var(--safe-b));-webkit-overflow-scrolling:touch;min-height:100%;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+
+  /* …EXCEPT the actual schedule info (so you can copy a name/phone/address/note)
+     and form fields you type into. */
+  .appt .name,.appt .time,.appt .meta,.appt .meta a,.appt .meta span,.appt .notes,
+  input,textarea,select{
+    -webkit-user-select:text;user-select:text;-webkit-touch-callout:default;}
+  ::selection{background:rgba(225,29,42,.22);}
+
+  /* ---------- Header (apple.com frosted white nav) ---------- */
+  header{
+    position:sticky;top:0;z-index:30;
+    padding:calc(13px + var(--safe-t)) 22px 13px;
+    display:flex;align-items:center;gap:13px;
+    background:rgba(255,255,255,.72);
+    backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);
+    border-bottom:1px solid var(--hair);
+  }
+  .logo{width:40px;height:40px;flex:none;}
+  .brand h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.02em;line-height:1.1;color:var(--red);}
+  .brand small{color:var(--muted);font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:500;}
+
+  /* ---------- Layout ---------- */
+  main{max-width:600px;margin:0 auto;padding:24px 18px;position:relative;z-index:1;}
+  .hidden{display:none !important;}
+  section:not(.hidden){animation:rise .4s var(--ease);}
+  @keyframes rise{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:none;}}
+
+  /* ---------- Calendar ---------- */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}
+  .cal-head .month{font-size:28px;font-weight:700;letter-spacing:-0.03em;color:var(--text);}
+  .nav-btn{background:var(--panel);border:none;color:var(--text);
+    width:40px;height:40px;border-radius:50%;font-size:20px;display:flex;align-items:center;justify-content:center;
+    transition:.2s var(--ease);}
+  .nav-btn:active{transform:scale(.9);background:var(--panel-2);}
+  .today-btn{background:var(--panel);border:none;color:var(--red-ink);
+    padding:9px 18px;border-radius:980px;font-size:13px;font-weight:600;transition:.2s var(--ease);}
+  .today-btn:active{transform:scale(.96);background:var(--panel-2);}
+  .dow{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:22px 0 9px;}
+  .dow span{text-align:center;font-size:11px;color:var(--muted-2);font-weight:600;letter-spacing:.05em;}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cell{aspect-ratio:1/1.08;background:var(--panel);border:1px solid transparent;
+    border-radius:14px;padding:8px 4px 5px;position:relative;display:flex;flex-direction:column;align-items:center;
+    transition:.2s var(--ease);}
+  .cell:active{transform:scale(.93);}
+  .cell.muted{background:transparent;}
+  .cell.muted .num{color:var(--muted-2);}
+  .cell.today .num{color:var(--red-ink);font-weight:700;}
+  .cell .num{font-size:15px;font-weight:500;color:var(--text);}
+  .cell.sel{background:var(--red);box-shadow:0 6px 16px rgba(225,29,42,.34);}
+  .cell.sel .num{color:#fff;font-weight:700;}
+  .dots{display:flex;gap:3px;margin-top:auto;flex-wrap:wrap;justify-content:center;padding-bottom:3px;}
+  .dot{width:5px;height:5px;border-radius:50%;background:var(--red);}
+  .cell.sel .dot{background:rgba(255,255,255,.95);}
+  .count-badge{position:absolute;top:4px;right:5px;font-size:10px;background:var(--red);
+    color:#fff;border-radius:8px;padding:1px 5px;font-weight:700;min-width:16px;text-align:center;}
+  .cell.sel .count-badge{background:#fff;color:var(--red);}
+
+  /* ---------- Day list ---------- */
+  .day-title{margin:34px 4px 16px;font-size:24px;font-weight:700;letter-spacing:-0.02em;color:var(--text);
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+  .day-title .muted{color:var(--muted);font-weight:500;font-size:14px;letter-spacing:0;white-space:nowrap;}
+
+  .appt{background:var(--card);border:1px solid var(--hair-soft);border-radius:var(--r);
+    padding:18px;margin-bottom:13px;box-shadow:0 2px 12px rgba(0,0,0,.05);transition:.25s var(--ease);}
+  .appt:active{transform:scale(.99);box-shadow:0 1px 6px rgba(0,0,0,.06);}
+  .appt .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .appt .name{font-size:18px;font-weight:600;margin:0;letter-spacing:-0.02em;color:var(--text);}
+  .appt .time{font-size:14px;color:var(--red-ink);font-weight:600;white-space:nowrap;letter-spacing:-0.01em;}
+  .appt .type{display:inline-block;font-size:11px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.05em;padding:4px 11px;border-radius:980px;margin-top:9px;}
+  .type-inspection{background:#e8f0fe;color:#0067d6;}
+  .type-sales{background:#fde7e9;color:#c30010;}
+  .type-followup{background:#fdf0d9;color:#9a6a00;}
+  .appt .meta{margin-top:14px;display:flex;flex-direction:column;gap:11px;}
+  .appt .meta a,.appt .meta span{color:var(--text);text-decoration:none;font-size:15px;display:flex;align-items:center;gap:11px;transition:.15s;}
+  .appt .meta a:active{color:var(--red-ink);}
+  .ic{width:18px;text-align:center;opacity:.5;flex:none;}
+  .appt .notes{margin-top:14px;background:var(--panel);border:none;border-radius:12px;padding:12px 14px;font-size:14px;color:var(--muted);white-space:pre-wrap;line-height:1.5;}
+  .appt-actions{display:flex;gap:9px;margin-top:16px;}
+  .appt-actions button{flex:1;background:var(--panel);border:none;color:var(--text);
+    padding:11px;border-radius:12px;font-size:13px;font-weight:600;transition:.2s var(--ease);}
+  .appt-actions button:active{transform:scale(.96);background:var(--panel-2);}
+  .appt-actions .del{color:var(--red-ink);}
+  .appt-actions .del:active{background:var(--red);color:#fff;}
+
+  .empty{text-align:center;color:var(--muted);padding:56px 20px;font-size:15px;line-height:1.65;}
+  .empty .big{font-size:48px;margin-bottom:14px;opacity:.92;}
+
+  /* ---------- Forms ---------- */
+  .field{margin-bottom:18px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:9px;
+    text-transform:uppercase;letter-spacing:.07em;font-weight:600;}
+  .field .req{color:var(--red-ink);}
+  .field input,.field select,.field textarea{
+    width:100%;background:var(--card);border:1px solid var(--hair);color:var(--text);
+    padding:15px 16px;border-radius:12px;font-size:16px;outline:none;transition:.2s var(--ease);}
+  .field input::placeholder,.field textarea::placeholder{color:var(--muted-2);}
+  .field input:focus,.field select:focus,.field textarea:focus{
+    border-color:var(--red);box-shadow:0 0 0 4px rgba(225,29,42,.12);}
+  .field textarea{min-height:104px;resize:vertical;line-height:1.5;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .seg{display:flex;gap:4px;background:var(--panel);border:none;padding:4px;border-radius:12px;}
+  .seg label{flex:1;position:relative;}
+  .seg input{position:absolute;opacity:0;pointer-events:none;}
+  .seg .opt{display:block;text-align:center;padding:11px 6px;border-radius:9px;
+    font-size:13.5px;font-weight:600;color:var(--muted);transition:.2s var(--ease);}
+  .seg input:checked + .opt{background:var(--red);color:#fff;box-shadow:0 2px 6px rgba(225,29,42,.32);}
+
+  .primary{width:100%;background:var(--red);border:none;color:#fff;padding:16px;
+    border-radius:12px;font-size:16px;font-weight:600;letter-spacing:-0.01em;
+    transition:.2s var(--ease);margin-top:6px;}
+  .primary:active{transform:scale(.98);background:var(--red-deep);}
+  .primary:disabled{opacity:.5;}
+  .ghost{width:100%;background:var(--panel);border:none;color:var(--text);
+    padding:15px;border-radius:12px;font-size:15px;font-weight:600;margin-top:11px;transition:.2s var(--ease);}
+  .ghost:active{transform:scale(.98);background:var(--panel-2);}
+
+  .section-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;
+    font-weight:600;margin:6px 4px 16px;}
+
+  /* ---------- Photo scan ---------- */
+  .scan-box{background:var(--panel);border:1px dashed var(--hair);border-radius:18px;
+    padding:26px 22px;text-align:center;margin-bottom:24px;}
+  .scan-box .pill{display:inline-block;background:var(--red);color:#fff;padding:13px 22px;border-radius:980px;
+    font-weight:600;font-size:15px;transition:.2s var(--ease);}
+  .scan-box .pill:active{transform:scale(.96);background:var(--red-deep);}
+  .scan-box p{color:var(--muted);font-size:13px;margin:16px 6px 0;line-height:1.6;}
+  #scanStatus{font-size:13px;color:var(--red-ink);margin-top:14px;min-height:18px;font-weight:500;}
+  .scan-prev{max-width:100%;border-radius:14px;margin-top:16px;display:none;border:1px solid var(--hair);}
+
+  /* ---------- Bottom nav (apple.com frosted white) ---------- */
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;
+    background:rgba(255,255,255,.8);
+    backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);
+    border-top:1px solid var(--hair);
+    display:flex;padding:10px 10px calc(10px + var(--safe-b));}
+  nav.tabs button{flex:1;background:none;border:none;color:var(--muted-2);
+    display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;padding:7px;
+    border-radius:14px;font-weight:600;letter-spacing:.01em;transition:.2s var(--ease);}
+  nav.tabs button .tic{font-size:22px;line-height:1;transition:.2s var(--ease);}
+  nav.tabs button:active .tic{transform:scale(.84);}
+  nav.tabs button.active{color:var(--red-ink);}
+  nav.tabs button.add-tab{color:#fff;}
+  nav.tabs .add-tab .tic{background:var(--red);width:46px;height:46px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:27px;margin-top:-22px;font-weight:300;
+    box-shadow:0 6px 16px rgba(225,29,42,.4);border:3px solid #fff;}
+
+  /* ---------- Toast ---------- */
+  #toast{position:fixed;left:50%;bottom:106px;transform:translateX(-50%) translateY(20px) scale(.96);
+    background:rgba(30,30,32,.92);
+    backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);
+    border:none;color:#fff;padding:14px 22px;
+    border-radius:14px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;
+    transition:.3s var(--ease);z-index:60;max-width:88%;text-align:center;box-shadow:0 12px 32px rgba(0,0,0,.26);}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0) scale(1);}
+  #toast.ok{border-left:3px solid #30d158;}
+  #toast.err{border-left:3px solid var(--red);}
+
+  /* ---------- Search ---------- */
+  .search{width:100%;background:var(--panel);border:1px solid transparent;color:var(--text);
+    padding:14px 16px;border-radius:12px;font-size:16px;outline:none;margin-bottom:18px;transition:.2s var(--ease);}
+  .search::placeholder{color:var(--muted-2);}
+  .search:focus{border-color:var(--red);background:var(--card);box-shadow:0 0 0 4px rgba(225,29,42,.12);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Mouth of the South LLC</h1>
+  </div>
+</header>
+
+<main>
+  <!-- ============ CALENDAR VIEW ============ -->
+  <section id="view-calendar">
+    <div class="cal-head">
+      <button class="nav-btn" id="prevMonth">‹</button>
+      <div class="month" id="monthLabel">Month</div>
+      <button class="nav-btn" id="nextMonth">›</button>
+    </div>
+    <div style="text-align:center;margin-bottom:12px;">
+      <button class="today-btn" id="todayBtn">Today</button>
+    </div>
+    <div class="dow">
+      <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+    </div>
+    <div class="grid" id="calGrid"></div>
+
+    <div class="day-title" id="dayTitle"></div>
+    <div id="dayList"></div>
+  </section>
+
+  <!-- ============ LIST / CUSTOMERS VIEW ============ -->
+  <section id="view-list" class="hidden">
+    <input class="search" id="searchBox" placeholder="🔍  Search name, phone, or address…" />
+    <div id="allList"></div>
+  </section>
+
+  <!-- ============ ADD / EDIT VIEW ============ -->
+  <section id="view-add" class="hidden">
+    <!-- Photo scan -->
+    <div class="scan-box">
+      <label for="photoInput" class="pill">📷 Scan a photo / card</label>
+      <input id="photoInput" type="file" accept="image/*" capture="environment" style="display:none" />
+      <p>Take a photo of a lead note, business card, or signup sheet. It reads the text and fills in the form below for you to check. (Free, runs on your phone.)</p>
+      <img id="scanPreview" class="scan-prev" alt="" />
+      <div id="scanStatus"></div>
+    </div>
+
+    <div class="section-title" id="formTitle">New Appointment</div>
+    <form id="apptForm">
+      <input type="hidden" id="apptId" />
+      <div class="field">
+        <label>Customer name <span class="req">*</span></label>
+        <input id="f_name" required placeholder="John Smith" />
+      </div>
+      <div class="field">
+        <label>Phone</label>
+        <input id="f_phone" type="tel" inputmode="tel" placeholder="(205) 555-0142" />
+      </div>
+      <div class="field">
+        <label>Address</label>
+        <input id="f_address" placeholder="123 Oak St, Birmingham, AL" />
+      </div>
+      <div class="two">
+        <div class="field">
+          <label>Date <span class="req">*</span></label>
+          <input id="f_date" type="date" required />
+        </div>
+        <div class="field">
+          <label>Time</label>
+          <input id="f_time" type="time" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <div class="seg">
+          <label><input type="radio" name="type" value="inspection" checked /><span class="opt">Inspection</span></label>
+          <label><input type="radio" name="type" value="sales" /><span class="opt">Sales</span></label>
+          <label><input type="radio" name="type" value="followup" /><span class="opt">Follow-up</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Notes / message</label>
+        <textarea id="f_notes" placeholder="Hail damage on north side, insurance already filed…"></textarea>
+      </div>
+      <button type="submit" class="primary" id="saveBtn">Save appointment</button>
+      <button type="button" class="ghost" id="cancelEdit">Cancel</button>
+    </form>
+  </section>
+
+  <!-- ============ MORE / BACKUP VIEW ============ -->
+  <section id="view-more" class="hidden">
+    <div class="section-title">Your data</div>
+    <div class="appt" style="border-left-color:var(--gold);">
+      <p class="name" style="font-size:15px;">📦 Backup &amp; restore</p>
+      <p style="color:var(--muted);font-size:13px;margin:8px 0 0;">Your appointments are saved on this device. Back them up so you never lose them.</p>
+      <div class="appt-actions">
+        <button id="exportBtn">⬇️ Export backup</button>
+        <button id="importBtn">⬆️ Restore</button>
+      </div>
+      <input id="importInput" type="file" accept=".json,application/json" style="display:none" />
+    </div>
+    <div class="appt" style="border-left-color:#7cc4ff;">
+      <p class="name" style="font-size:15px;">📊 Export to spreadsheet</p>
+      <p style="color:var(--muted);font-size:13px;margin:8px 0 0;">Download all customers as a CSV you can open in Excel or Google Sheets.</p>
+      <div class="appt-actions"><button id="csvBtn">⬇️ Download CSV</button></div>
+    </div>
+    <div class="empty" style="padding-top:24px;">
+      <div id="statLine"></div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ BOTTOM NAV ============ -->
+<nav class="tabs">
+  <button data-view="calendar" class="active"><span class="tic">📅</span>Calendar</button>
+  <button data-view="list"><span class="tic">👥</span>Customers</button>
+  <button data-view="add" class="add-tab"><span class="tic">＋</span>Add</button>
+  <button data-view="more"><span class="tic">⚙️</span>More</button>
+</nav>
+
+<div id="toast"></div>
+
+<!-- Tesseract.js for free on-device photo text reading -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+/* =========================================================
+   Mouth of the South LLC — Scheduler
+   Data model: appointment = {id,name,phone,address,date,time,type,notes,created}
+   Storage: localStorage key "mots_appts"
+   ========================================================= */
+const STORE = "mots_appts";
+const API = "/api/appointments";
+const $ = (s,el=document)=>el.querySelector(s);
+const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
+
+let appts = [];
+let serverMode = false;          // true when the backend server answers
+let viewMonth = new Date(); viewMonth.setDate(1);
+let selectedDate = ymd(new Date());
+
+function loadLocal(){ try{return JSON.parse(localStorage.getItem(STORE))||[]}catch(e){return []} }
+function saveLocal(){ localStorage.setItem(STORE, JSON.stringify(appts)); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* Detect a backend. If present we use it (data is shared with the Telegram
+   bot). If not — e.g. the file is opened directly — we fall back to
+   this-device-only storage so the app still works. */
+async function boot(){
+  try{
+    const r=await fetch(API,{cache:"no-store"});
+    if(!r.ok) throw 0;
+    appts=await r.json();
+    serverMode=true;
+    startPolling();
+  }catch(e){
+    serverMode=false;
+    appts=loadLocal();
+  }
+  refresh();
+}
+
+async function persistAdd(a){
+  if(serverMode){
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(a)});
+    const saved=await r.json(); a.id=saved.id; appts.push(saved);
+  }else{ appts.push(a); saveLocal(); }
+}
+async function persistUpdate(a){
+  if(serverMode){ await fetch(API+"/"+a.id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(a)}); }
+  else{ saveLocal(); }
+}
+async function persistDelete(id){
+  appts=appts.filter(a=>a.id!==id);
+  if(serverMode){ await fetch(API+"/"+id,{method:"DELETE"}); }
+  else{ saveLocal(); }
+}
+
+/* Poll every 8s so appointments the Telegram bot adds appear automatically.
+   Skipped while the Add/Edit form is open so we never interrupt typing. */
+function startPolling(){
+  setInterval(async()=>{
+    if(!$("#view-add").classList.contains("hidden")) return;
+    try{
+      const r=await fetch(API,{cache:"no-store"}); if(!r.ok) return;
+      const fresh=await r.json();
+      if(JSON.stringify(fresh)!==JSON.stringify(appts)){ appts=fresh; refresh(); }
+    }catch(e){}
+  },8000);
+}
+
+/* ---- date helpers ---- */
+function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function parseYMD(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function prettyDate(s){ const d=parseYMD(s); return DAYS[d.getDay()]+", "+MONTHS[d.getMonth()]+" "+d.getDate(); }
+function pretty12(t){ if(!t) return ""; let [h,m]=t.split(":").map(Number); const ap=h>=12?"PM":"AM"; h=h%12||12; return h+":"+String(m).padStart(2,"0")+" "+ap; }
+
+/* ---- toast ---- */
+let toastT;
+function toast(msg,kind="ok"){ const t=$("#toast"); t.textContent=msg; t.className="show "+kind;
+  clearTimeout(toastT); toastT=setTimeout(()=>t.className="",2200); }
+
+/* =========================================================
+   CALENDAR
+   ========================================================= */
+function renderCalendar(){
+  $("#monthLabel").textContent = MONTHS[viewMonth.getMonth()]+" "+viewMonth.getFullYear();
+  const grid=$("#calGrid"); grid.innerHTML="";
+  const first=new Date(viewMonth.getFullYear(),viewMonth.getMonth(),1);
+  const startPad=first.getDay();
+  const daysInMonth=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,0).getDate();
+  const prevDays=new Date(viewMonth.getFullYear(),viewMonth.getMonth(),0).getDate();
+  const todayStr=ymd(new Date());
+
+  const counts={};
+  appts.forEach(a=>{counts[a.date]=(counts[a.date]||0)+1;});
+
+  const cells=[];
+  for(let i=startPad-1;i>=0;i--) cells.push({d:prevDays-i,muted:true,date:null});
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=ymd(new Date(viewMonth.getFullYear(),viewMonth.getMonth(),d));
+    cells.push({d,muted:false,date:ds});
+  }
+  while(cells.length%7!==0) cells.push({d:cells.length,muted:true,date:null});
+
+  cells.forEach(c=>{
+    const el=document.createElement("div");
+    el.className="cell"+(c.muted?" muted":"");
+    if(c.date===todayStr) el.classList.add("today");
+    if(c.date===selectedDate) el.classList.add("sel");
+    el.innerHTML=`<div class="num">${c.d}</div>`;
+    if(c.date && counts[c.date]){
+      const n=counts[c.date];
+      el.innerHTML+=`<span class="count-badge">${n}</span><div class="dots">`+
+        Array(Math.min(n,3)).fill('<span class="dot"></span>').join("")+`</div>`;
+    }
+    if(c.date){ el.onclick=()=>{
+      if(selectedDate===c.date){ renderDay(); return; }
+      selectedDate=c.date;
+      const prev=grid.querySelector(".cell.sel"); if(prev) prev.classList.remove("sel");
+      el.classList.add("sel");
+      renderDay();                                   // only the day list redraws — no grid rebuild
+    }; }
+    grid.appendChild(el);
+  });
+}
+
+function renderDay(){
+  $("#dayTitle").innerHTML = `<span>${prettyDate(selectedDate)}</span>`;
+  const list=$("#dayList");
+  const items=appts.filter(a=>a.date===selectedDate)
+    .sort((a,b)=>(a.time||"99").localeCompare(b.time||"99"));
+  if(!items.length){
+    list.innerHTML=`<div class="empty"><div class="big">🗓️</div>No appointments this day.<br>Tap ＋ Add to create one.</div>`;
+    return;
+  }
+  $("#dayTitle").innerHTML += `<span class="muted">${items.length} appt${items.length>1?"s":""}</span>`;
+  list.innerHTML=items.map(apptCard).join("");
+  wireCards(list);
+}
+
+/* =========================================================
+   APPOINTMENT CARD
+   ========================================================= */
+function apptCard(a){
+  const typeLabel={inspection:"Inspection",sales:"Sales",followup:"Follow-up"}[a.type]||"Inspection";
+  const phoneClean=(a.phone||"").replace(/[^\d+]/g,"");
+  const mapUrl="https://maps.google.com/?q="+encodeURIComponent(a.address||"");
+  return `<div class="appt" data-id="${a.id}">
+    <div class="row1">
+      <div>
+        <p class="name">${esc(a.name)}</p>
+        <span class="type type-${a.type||'inspection'}">${typeLabel}</span>
+      </div>
+      <div class="time">${a.time?pretty12(a.time):"—"}</div>
+    </div>
+    <div class="meta">
+      ${a.phone?`<a href="tel:${phoneClean}"><span class="ic">📞</span>${esc(a.phone)}</a>`:""}
+      ${a.address?`<a href="${mapUrl}" target="_blank" rel="noopener"><span class="ic">📍</span>${esc(a.address)}</a>`:""}
+    </div>
+    ${a.notes?`<div class="notes">${esc(a.notes)}</div>`:""}
+    <div class="appt-actions">
+      ${a.phone?`<button class="sms" data-phone="${phoneClean}">💬 Text</button>`:""}
+      <button class="edit">✏️ Edit</button>
+      <button class="del">🗑️ Delete</button>
+    </div>
+  </div>`;
+}
+
+function wireCards(scope){
+  $$(".appt",scope).forEach(card=>{
+    const id=card.dataset.id;
+    const editB=$(".edit",card), delB=$(".del",card), smsB=$(".sms",card);
+    if(editB) editB.onclick=()=>startEdit(id);
+    if(delB) delB.onclick=async()=>{ if(confirm("Delete this appointment?")){ await persistDelete(id); refresh(); toast("Deleted","ok"); } };
+    if(smsB) smsB.onclick=()=>{ location.href="sms:"+smsB.dataset.phone; };
+  });
+}
+
+/* =========================================================
+   CUSTOMERS / LIST VIEW
+   ========================================================= */
+function renderList(filter=""){
+  const list=$("#allList");
+  const f=filter.toLowerCase().trim();
+  let items=[...appts].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(f) items=items.filter(a=>(a.name+a.phone+a.address+(a.notes||"")).toLowerCase().includes(f));
+  if(!items.length){
+    list.innerHTML=`<div class="empty"><div class="big">👥</div>${appts.length?"No matches.":"No customers yet.<br>Tap ＋ Add to start."}</div>`;
+    return;
+  }
+  // group by date
+  let html="", lastDate="";
+  items.forEach(a=>{
+    if(a.date!==lastDate){ html+=`<div class="day-title"><span>${prettyDate(a.date)}</span></div>`; lastDate=a.date; }
+    html+=apptCard(a);
+  });
+  list.innerHTML=html;
+  wireCards(list);
+}
+
+/* =========================================================
+   ADD / EDIT FORM
+   ========================================================= */
+function blankForm(){
+  $("#apptId").value=""; $("#f_name").value=""; $("#f_phone").value="";
+  $("#f_address").value=""; $("#f_time").value="";
+  $("#f_date").value=selectedDate||ymd(new Date());
+  $$('input[name=type]')[0].checked=true;
+  $("#f_notes").value="";
+  $("#formTitle").textContent="New Appointment";
+  $("#saveBtn").textContent="Save appointment";
+  $("#scanPreview").style.display="none"; $("#scanStatus").textContent="";
+}
+
+function startEdit(id){
+  const a=appts.find(x=>x.id===id); if(!a) return;
+  $("#apptId").value=a.id; $("#f_name").value=a.name||""; $("#f_phone").value=a.phone||"";
+  $("#f_address").value=a.address||""; $("#f_date").value=a.date; $("#f_time").value=a.time||"";
+  $("#f_notes").value=a.notes||"";
+  const t=$$('input[name=type]').find(r=>r.value===(a.type||"inspection")); if(t)t.checked=true;
+  $("#formTitle").textContent="Edit Appointment";
+  $("#saveBtn").textContent="Update appointment";
+  switchView("add");
+}
+
+$("#apptForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const id=$("#apptId").value;
+  const data={
+    name:$("#f_name").value.trim(),
+    phone:$("#f_phone").value.trim(),
+    address:$("#f_address").value.trim(),
+    date:$("#f_date").value,
+    time:$("#f_time").value,
+    type:($$('input[name=type]').find(r=>r.checked)||{}).value||"inspection",
+    notes:$("#f_notes").value.trim()
+  };
+  if(!data.name||!data.date){ toast("Name and date are required","err"); return; }
+  const btn=$("#saveBtn"); btn.disabled=true;
+  try{
+    if(id){
+      const a=appts.find(x=>x.id===id); Object.assign(a,data); await persistUpdate(a); toast("Updated ✓","ok");
+    }else{
+      await persistAdd({id:uid(),created:Date.now(),...data}); toast("Appointment added ✓","ok");
+    }
+    selectedDate=data.date;
+    blankForm();
+    switchView("calendar");
+  }catch(err){ toast("Couldn't save — check your connection","err"); }
+  finally{ btn.disabled=false; }
+});
+
+$("#cancelEdit").onclick=()=>{ blankForm(); switchView("calendar"); };
+
+/* =========================================================
+   PHOTO SCAN (Tesseract.js, on-device, free)
+   ========================================================= */
+$("#photoInput").addEventListener("change",async e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const url=URL.createObjectURL(file);
+  const prev=$("#scanPreview"); prev.src=url; prev.style.display="block";
+  const status=$("#scanStatus");
+  status.textContent="Reading photo… 0%";
+  try{
+    const {data}=await Tesseract.recognize(file,"eng",{
+      logger:m=>{ if(m.status==="recognizing text") status.textContent="Reading photo… "+Math.round(m.progress*100)+"%"; }
+    });
+    const text=data.text||"";
+    fillFromText(text);
+    status.textContent="✓ Done — check the fields below.";
+  }catch(err){
+    status.textContent="Couldn't read that image. Try a clearer, well-lit photo.";
+    console.error(err);
+  }
+});
+
+/* crude but effective field extraction */
+function fillFromText(text){
+  const lines=text.split(/\n/).map(l=>l.trim()).filter(Boolean);
+  const joined=text.replace(/\n/g," ");
+
+  // phone
+  const phone=(joined.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/)||[])[0];
+  if(phone) $("#f_phone").value=phone.trim();
+
+  // address (line containing a number + street word, or zip)
+  const streetRe=/\d{1,6}\s+\w+.*(st|street|ave|avenue|rd|road|dr|drive|ln|lane|blvd|ct|court|way|hwy|highway|pkwy|cir|circle|trl|trail)\b/i;
+  let addr=lines.find(l=>streetRe.test(l));
+  if(!addr) addr=lines.find(l=>/\b\d{5}(-\d{4})?\b/.test(l) && /[a-z]/i.test(l));
+  if(addr) $("#f_address").value=addr.replace(/\s{2,}/g," ").trim();
+
+  // name: first line that is mostly letters, not the address, not a phone, 2+ words preferred
+  let name=lines.find(l=>/^[A-Za-z][A-Za-z .'-]{2,40}$/.test(l) && l!==addr && l.split(" ").length<=4 && l.split(" ").length>=1 && !/roofing|inspection|insurance|llc|inc/i.test(l));
+  if(name) $("#f_name").value=name.trim();
+
+  // notes: dump the rest so nothing is lost
+  $("#f_notes").value=text.trim();
+}
+
+/* =========================================================
+   BACKUP / EXPORT
+   ========================================================= */
+$("#exportBtn").onclick=()=>{
+  download("mouth-of-south-backup-"+ymd(new Date())+".json", JSON.stringify(appts,null,2));
+  toast("Backup downloaded ✓","ok");
+};
+$("#importBtn").onclick=()=>$("#importInput").click();
+$("#importInput").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=async()=>{ try{
+    const data=JSON.parse(r.result);
+    if(!Array.isArray(data)) throw 0;
+    if(confirm("Restore "+data.length+" appointments? This adds to what you have.")){
+      const ids=new Set(appts.map(a=>a.id));
+      for(const a of data){ if(!ids.has(a.id)) await persistAdd(a); }
+      refresh(); toast("Restored ✓","ok");
+    }
+  }catch(err){ toast("That file wasn't a valid backup","err"); } };
+  r.readAsText(f);
+});
+$("#csvBtn").onclick=()=>{
+  const head=["Name","Phone","Address","Date","Time","Type","Notes"];
+  const rows=appts.map(a=>[a.name,a.phone,a.address,a.date,a.time,a.type,(a.notes||"").replace(/\n/g," ")]
+    .map(v=>'"'+String(v||"").replace(/"/g,'""')+'"').join(","));
+  download("mouth-of-south-customers.csv",[head.join(","),...rows].join("\n"));
+  toast("CSV downloaded ✓","ok");
+};
+function download(name,content){
+  const blob=new Blob([content],{type:"text/plain"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=name; a.click();
+}
+
+/* =========================================================
+   NAV / VIEW SWITCH
+   ========================================================= */
+function switchView(v){
+  ["calendar","list","add","more"].forEach(name=>{
+    $("#view-"+name).classList.toggle("hidden",name!==v);
+  });
+  $$("nav.tabs button").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
+  if(v==="add" && !$("#apptId").value) blankForm();
+  if(v==="list") renderList($("#searchBox").value);
+  if(v==="more") updateStats();
+  window.scrollTo(0,0);
+}
+$$("nav.tabs button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+
+$("#prevMonth").onclick=()=>{ viewMonth.setMonth(viewMonth.getMonth()-1); renderCalendar(); };
+$("#nextMonth").onclick=()=>{ viewMonth.setMonth(viewMonth.getMonth()+1); renderCalendar(); };
+$("#todayBtn").onclick=()=>{ viewMonth=new Date(); viewMonth.setDate(1); selectedDate=ymd(new Date()); renderCalendar(); renderDay(); };
+$("#searchBox").addEventListener("input",e=>renderList(e.target.value));
+
+function updateStats(){
+  const upcoming=appts.filter(a=>a.date>=ymd(new Date())).length;
+  $("#statLine").innerHTML=`<strong>${appts.length}</strong> total appointments · <strong>${upcoming}</strong> upcoming`;
+}
+
+/* =========================================================
+   REFRESH ALL
+   ========================================================= */
+function refresh(){ renderCalendar(); renderDay(); }
+
+/* boot */
+boot();
+
+/* Register the service worker so the app installs to the home screen and
+   opens instantly (and works even with a flaky signal). */
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>

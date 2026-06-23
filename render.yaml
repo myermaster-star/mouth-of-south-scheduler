@@ -1,0 +1,18 @@
+# Render Blueprint — lets Render set the app up automatically.
+# In Render: New ➜ Blueprint ➜ pick this repo. It reads this file, then asks
+# you to paste the secret values (they are NEVER stored in the code).
+services:
+  - type: web
+    name: mouth-of-south-scheduler
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/appointments
+    envVars:
+      - key: TELEGRAM_TOKEN          # from @BotFather — turns the agent on
+        sync: false
+      - key: GEMINI_API_KEY          # from Google AI Studio — turns on smart reading
+        sync: false
+      - key: TELEGRAM_ALLOWED_IDS    # optional: comma-separated Telegram ids to lock the bot
+        sync: false
