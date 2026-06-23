@@ -20,6 +20,13 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 
+/* Safety net: a single failed Telegram send (or any stray async error) must
+   never take the whole server down. Log it and keep running. */
+process.on("unhandledRejection", (err) =>
+  console.error("unhandledRejection:", (err && err.message) || err));
+process.on("uncaughtException", (err) =>
+  console.error("uncaughtException:", (err && err.message) || err));
+
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, "data.json");
 
@@ -113,9 +120,10 @@ if (!TOKEN) {
    ===================================================================== */
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+let geminiCooldownUntil = 0;   // set after a quota/error so we don't hammer a dead key
 
 async function geminiExtract({ text = "", imageB64 = "", mime = "image/jpeg" }) {
-  if (!GEMINI_KEY) return null;
+  if (!GEMINI_KEY || Date.now() < geminiCooldownUntil) return null;
   const today = todayYMD();
   const weekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
   const instruction =
@@ -136,7 +144,11 @@ async function geminiExtract({ text = "", imageB64 = "", mime = "image/jpeg" }) 
     const url = "https://generativelanguage.googleapis.com/v1beta/models/" +
                 GEMINI_MODEL + ":generateContent?key=" + GEMINI_KEY;
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!r.ok) { console.error("Gemini " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 200)); return null; }
+    if (!r.ok) {
+      if (r.status === 429 || r.status === 403) geminiCooldownUntil = Date.now() + 10 * 60 * 1000;
+      console.error("Gemini " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 160));
+      return null;
+    }
     const j = await r.json();
     const out = j && j.candidates && j.candidates[0] && j.candidates[0].content &&
                 j.candidates[0].content.parts && j.candidates[0].content.parts[0].text || "";
@@ -239,18 +251,20 @@ function saveAndReply(bot, chatId, appt, source) {
   writeAll(list);
 
   const TYPE = { inspection: "Inspection", sales: "Sales", followup: "Follow-up" }[appt.type];
-  const dateNote = guessed ? "  ⚠️ _(date defaulted to today — fix in the app if wrong)_" : "";
+  const dateNote = guessed ? "  (date defaulted to today — fix in the app if wrong)" : "";
 
+  // Plain text on purpose: customer names/notes can contain characters that
+  // break Telegram's Markdown parser, which used to crash the bot.
   bot.sendMessage(chatId,
-    "✅ *Added to your schedule* (from " + source + ")\n\n" +
-    "👤 " + (appt.name || "_no name found_") + "\n" +
+    "✅ Added to your schedule (from " + source + ")\n\n" +
+    "👤 " + (appt.name || "(no name found)") + "\n" +
     "📞 " + (appt.phone || "—") + "\n" +
     "📍 " + (appt.address || "—") + "\n" +
     "🗓️ " + appt.date + (appt.time ? "  " + to12(appt.time) : "") + dateNote + "\n" +
     "🏷️ " + TYPE + "\n" +
     (appt.notes ? "📝 " + appt.notes.slice(0, 200) + "\n" : "") +
-    "\nOpen the app to review or edit.",
-    { parse_mode: "Markdown" });
+    "\nOpen the app to review or edit."
+  ).catch((e) => console.error("reply failed:", e.message));
 }
 
 /* =====================================================================
