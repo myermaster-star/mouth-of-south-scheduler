@@ -1,0 +1,21 @@
+name: keep-alive
+# Pings the live app every ~14 minutes so Render's free tier never sleeps,
+# which keeps the website instant and the Telegram bot replying immediately.
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch:        # lets you run it manually from the Actions tab
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the app (wake it if it dozed off)
+        run: |
+          for i in 1 2 3 4; do
+            code=$(curl -s -m 30 -o /dev/null -w "%{http_code}" \
+              https://mouth-of-south-scheduler.onrender.com/api/appointments || echo 000)
+            echo "attempt $i -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 25
+          done
+          echo "note: app did not return 200 this run (will try again next cycle)"
