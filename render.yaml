@@ -12,7 +12,9 @@ services:
     envVars:
       - key: TELEGRAM_TOKEN          # from @BotFather — turns the agent on
         sync: false
-      - key: GEMINI_API_KEY          # from Google AI Studio — turns on smart reading
+      - key: GROQ_API_KEY            # from console.groq.com — free AI reading (recommended)
+        sync: false
+      - key: GEMINI_API_KEY          # alternative AI reader (Google)
         sync: false
       - key: TELEGRAM_ALLOWED_IDS    # optional: comma-separated Telegram ids to lock the bot
         sync: false

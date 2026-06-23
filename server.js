@@ -111,23 +111,26 @@ if (!TOKEN) {
 }
 
 /* =====================================================================
-   SMART EXTRACTION (optional) — Google Gemini free tier
+   SMART EXTRACTION (optional) — AI reading of photos & notes
    ---------------------------------------------------------------------
-   If GEMINI_API_KEY is set, the bot reads photos & text with AI vision,
-   which is far more accurate than offline OCR and understands relative
-   dates ("tomorrow", "Tuesday 2pm"). With no key, it returns null and the
-   bot falls back to the free offline reader. Set GEMINI_MODEL to override.
+   Set ONE of these and the bot reads with AI vision (far better than the
+   offline OCR, and it understands "tomorrow / Tuesday 2pm"):
+     • GROQ_API_KEY    — free, no credit card   (model via GROQ_MODEL)
+     • GEMINI_API_KEY  — Google AI              (model via GEMINI_MODEL)
+   With neither (or if a provider errors), it falls back to free offline OCR.
    ===================================================================== */
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 let geminiCooldownUntil = 0;   // set after a quota/error so we don't hammer a dead key
+const GROQ_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_MODEL = process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
+let groqCooldownUntil = 0;
 
-async function geminiExtract({ text = "", imageB64 = "", mime = "image/jpeg" }) {
-  if (!GEMINI_KEY || Date.now() < geminiCooldownUntil) return null;
+/* The shared instruction both AI providers use. */
+function buildInstruction() {
   const today = todayYMD();
   const weekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
-  const instruction =
-    "You read messy lead notes for a roofing company's appointment scheduler in Alabama (US Central time). " +
+  return "You read messy lead notes for a roofing company's appointment scheduler in Alabama (US Central time). " +
     "Today is " + today + " (a " + weekday + "). From the photo and/or text, extract ONE appointment. " +
     "Resolve relative dates like 'tomorrow', 'Tuesday', 'next week' into a real date. " +
     "Return ONLY a JSON object with EXACTLY these keys: " +
@@ -137,6 +140,41 @@ async function geminiExtract({ text = "", imageB64 = "", mime = "image/jpeg" }) 
     "type (one of: inspection, sales, followup — default inspection), " +
     "notes (anything else worth keeping: damage details, insurance, best time to call). " +
     "Never invent data; use an empty string for anything unknown.";
+}
+
+/* Try whichever AI provider is configured (Groq first, then Gemini). */
+async function aiExtract(args) {
+  return (await groqExtract(args)) || (await geminiExtract(args));
+}
+
+/* ---- Groq (free) — OpenAI-compatible chat completions with vision ---- */
+async function groqExtract({ text = "", imageB64 = "", mime = "image/jpeg" }) {
+  if (!GROQ_KEY || Date.now() < groqCooldownUntil) return null;
+  const content = [{ type: "text", text: buildInstruction() + (text ? "\n\nText provided:\n" + text : "") }];
+  if (imageB64) content.push({ type: "image_url", image_url: { url: "data:" + mime + ";base64," + imageB64 } });
+  const body = { model: GROQ_MODEL, messages: [{ role: "user", content }], temperature: 0, response_format: { type: "json_object" } };
+  try {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GROQ_KEY },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      if (r.status === 429 || r.status === 403) groqCooldownUntil = Date.now() + 10 * 60 * 1000;
+      console.error("Groq " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 160));
+      return null;
+    }
+    const j = await r.json();
+    const out = (j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
+    const obj = JSON.parse(out);
+    return obj && typeof obj === "object" ? obj : null;
+  } catch (e) { console.error("Groq error", e.message); return null; }
+}
+
+/* ---- Google Gemini ---- */
+async function geminiExtract({ text = "", imageB64 = "", mime = "image/jpeg" }) {
+  if (!GEMINI_KEY || Date.now() < geminiCooldownUntil) return null;
+  const instruction = buildInstruction();
   const parts = [{ text: instruction + (text ? "\n\nText provided:\n" + text : "") }];
   if (imageB64) parts.push({ inline_data: { mime_type: mime, data: imageB64 } });
   const body = { contents: [{ parts }], generationConfig: { temperature: 0, responseMimeType: "application/json" } };
@@ -201,7 +239,7 @@ function startBot(token) {
     if (msg.photo) return;                       // photos handled below
     if (!msg.text || msg.text.startsWith("/")) return;
     if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, "⛔ Not authorized.");
-    const ai = await geminiExtract({ text: msg.text });        // null unless GEMINI_API_KEY set
+    const ai = await aiExtract({ text: msg.text });            // null unless an AI key is set
     const appt = ai ? finalizeAppt(ai) : parseLead(msg.text);
     saveAndReply(bot, msg.chat.id, appt, ai ? "your message" : "your message");
   });
@@ -218,7 +256,7 @@ function startBot(token) {
       const buf = Buffer.from(await resp.arrayBuffer());
 
       // Best: AI vision reads the image directly (sharp accuracy, handles handwriting).
-      const ai = await geminiExtract({ imageB64: buf.toString("base64"), mime: "image/jpeg", text: msg.caption || "" });
+      const ai = await aiExtract({ imageB64: buf.toString("base64"), mime: "image/jpeg", text: msg.caption || "" });
       if (ai) return saveAndReply(bot, chatId, finalizeAppt(ai), "photo");
 
       // Free fallback: offline OCR + the rule-based parser.
