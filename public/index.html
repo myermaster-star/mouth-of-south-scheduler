@@ -357,18 +357,21 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;"
 /* Detect a backend. If present we use it (data is shared with the Telegram
    bot). If not — e.g. the file is opened directly — we fall back to
    this-device-only storage so the app still works. */
+async function fetchServer(){
+  const r=await fetch(API,{cache:"no-store"});
+  if(!r.ok) throw new Error("status "+r.status);
+  return await r.json();
+}
+
 async function boot(){
-  try{
-    const r=await fetch(API,{cache:"no-store"});
-    if(!r.ok) throw 0;
-    appts=await r.json();
-    serverMode=true;
-    startPolling();
-  }catch(e){
-    serverMode=false;
-    appts=loadLocal();
+  // The free server may be waking from sleep — try a few times before giving up.
+  for(let i=0;i<4 && !serverMode;i++){
+    try{ appts=await fetchServer(); serverMode=true; }
+    catch(e){ await new Promise(r=>setTimeout(r,1500)); }
   }
+  if(!serverMode) appts=loadLocal();   // offline for now — the sync loop will recover
   refresh();
+  startPolling();                      // always runs: keeps us in sync AND auto-recovers
 }
 
 async function persistAdd(a){
@@ -391,12 +394,12 @@ async function persistDelete(id){
    Skipped while the Add/Edit form is open so we never interrupt typing. */
 function startPolling(){
   setInterval(async()=>{
-    if(!$("#view-add").classList.contains("hidden")) return;
+    if(!$("#view-add").classList.contains("hidden")) return;   // don't disrupt typing
     try{
-      const r=await fetch(API,{cache:"no-store"}); if(!r.ok) return;
-      const fresh=await r.json();
+      const fresh=await fetchServer();
+      serverMode=true;                                         // reachable → (re)enter server mode
       if(JSON.stringify(fresh)!==JSON.stringify(appts)){ appts=fresh; refresh(); }
-    }catch(e){}
+    }catch(e){ /* still offline — try again next tick */ }
   },8000);
 }
 
