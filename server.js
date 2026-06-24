@@ -30,14 +30,71 @@ process.on("uncaughtException", (err) =>
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, "data.json");
 
-/* ---------------- tiny JSON "database" ---------------- */
-function readAll() {
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); }
-  catch (e) { return []; }
+/* ---------------- storage: in-memory, persisted to a private GitHub vault ----------------
+   Render's free disk is wiped on restart, so the source of truth lives in a
+   private GitHub repo (DATA_REPO + DATA_REPO_TOKEN). Reads are served from
+   memory; every change is pushed to GitHub so nothing can ever be lost. With
+   those env vars absent it falls back to the local data.json (fine for dev). */
+const GH_REPO = process.env.DATA_REPO || "";              // e.g. "owner/mots-data"
+const GH_TOKEN = process.env.DATA_REPO_TOKEN || "";
+const GH_PATH = process.env.DATA_FILE_PATH || "data.json";
+const useGitHub = !!(GH_REPO && GH_TOKEN);
+const GH_URL = "https://api.github.com/repos/" + GH_REPO + "/contents/" + GH_PATH;
+
+let DATA = [];        // in-memory source of truth (what the API serves)
+let GH_SHA = null;    // current GitHub file sha (required to update it)
+
+function ghHeaders() {
+  return {
+    "Authorization": "token " + GH_TOKEN,
+    "Accept": "application/vnd.github+json",
+    "Content-Type": "application/json",
+    "User-Agent": "mots-scheduler"
+  };
 }
-function writeAll(list) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(list, null, 2));
+
+async function loadStore() {
+  if (useGitHub) {
+    try {
+      const r = await fetch(GH_URL, { headers: ghHeaders() });
+      if (r.ok) {
+        const j = await r.json();
+        GH_SHA = j.sha;
+        DATA = JSON.parse(Buffer.from(j.content || "", "base64").toString("utf8") || "[]");
+        console.log("📦 Vault loaded: " + DATA.length + " appointment(s) from " + GH_REPO);
+        return;
+      }
+      console.error("vault load failed " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 120));
+    } catch (e) { console.error("vault load error", e.message); }
+  }
+  try { DATA = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { DATA = []; }
 }
+
+let saveChain = Promise.resolve();   // serialize writes so concurrent saves can't collide
+function persistStore() {
+  saveChain = saveChain.then(doPersist).catch((e) => console.error("persist:", e.message));
+  return saveChain;
+}
+async function doPersist() {
+  try { fs.writeFileSync(DATA_FILE, JSON.stringify(DATA, null, 2)); } catch (e) {}   // local mirror too
+  if (!useGitHub) return;
+  const content = Buffer.from(JSON.stringify(DATA, null, 2)).toString("base64");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const body = { message: "update appointments " + new Date().toISOString(), content };
+    if (GH_SHA) body.sha = GH_SHA;
+    const r = await fetch(GH_URL, { method: "PUT", headers: ghHeaders(), body: JSON.stringify(body) });
+    if (r.ok) { const j = await r.json(); GH_SHA = j.content && j.content.sha; return; }
+    if (r.status === 409 || r.status === 422) {            // stale sha — refetch and retry
+      try { const g = await fetch(GH_URL, { headers: ghHeaders() }); if (g.ok) GH_SHA = (await g.json()).sha; } catch (e) {}
+      continue;
+    }
+    console.error("vault save failed " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 120));
+    return;
+  }
+}
+
+function readAll() { return DATA; }
+async function writeAll(list) { DATA = list; await persistStore(); }
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -56,17 +113,17 @@ app.get("/api/appointments", (req, res) => {
   res.json(readAll());
 });
 
-app.post("/api/appointments", (req, res) => {
+app.post("/api/appointments", async (req, res) => {
   const list = readAll();
   const a = sanitize(req.body);
   a.id = uid();
   a.created = Date.now();
   list.push(a);
-  writeAll(list);
+  await writeAll(list);
   res.json(a);
 });
 
-app.put("/api/appointments/:id", (req, res) => {
+app.put("/api/appointments/:id", async (req, res) => {
   const list = readAll();
   const i = list.findIndex(x => x.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: "not found" });
@@ -74,14 +131,14 @@ app.put("/api/appointments/:id", (req, res) => {
   // update only changes the keys that were actually sent.
   const merged = { ...list[i], ...req.body };
   list[i] = { ...sanitize(merged), id: list[i].id, created: list[i].created };
-  writeAll(list);
+  await writeAll(list);
   res.json(list[i]);
 });
 
-app.delete("/api/appointments/:id", (req, res) => {
+app.delete("/api/appointments/:id", async (req, res) => {
   let list = readAll();
   list = list.filter(x => x.id !== req.params.id);
-  writeAll(list);
+  await writeAll(list);
   res.json({ ok: true });
 });
 
@@ -98,7 +155,10 @@ function sanitize(b = {}) {
   };
 }
 
-app.listen(PORT, () => console.log("✅ Web + API running on port " + PORT));
+loadStore().then(() => {
+  app.listen(PORT, () => console.log("✅ Web + API running on port " + PORT +
+    (useGitHub ? " — data vault: " + GH_REPO : " — local data.json")));
+});
 
 /* =====================================================================
    TELEGRAM AGENT
@@ -278,7 +338,7 @@ function startBot(token) {
 }
 
 /* ---------------- save + confirm ---------------- */
-function saveAndReply(bot, chatId, appt, source) {
+async function saveAndReply(bot, chatId, appt, source) {
   const guessed = appt._dateGuessed;
   delete appt._dateGuessed;                 // internal flag — never store it
 
@@ -286,7 +346,7 @@ function saveAndReply(bot, chatId, appt, source) {
   appt.id = uid();
   appt.created = Date.now();
   list.push(appt);
-  writeAll(list);
+  await writeAll(list);                      // wait until it's durably saved in the vault
 
   const TYPE = { inspection: "Inspection", sales: "Sales", followup: "Follow-up" }[appt.type];
   const dateNote = guessed ? "  (date defaulted to today — fix in the app if wrong)" : "";
